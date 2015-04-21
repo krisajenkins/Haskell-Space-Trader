@@ -1,7 +1,8 @@
 module Main where
 
-import           Data.Map  (Map)
-import qualified Data.Map  as Map
+import           Data.Map   (Map)
+import qualified Data.Map   as Map
+import           Data.Maybe (fromMaybe)
 import           Text.Read
 
 data Resource
@@ -35,13 +36,19 @@ findPlace n ps =
 data Command
   = List
   | Goto String
-  | Buy Resource
-        Int
-  | Sell Resource
-         Int
+  | Buy Int
+        Resource
+  | Sell Int
+         Resource
   | Market
   | Wallet
   deriving (Read)
+
+updateInventory :: Resource -> Int -> Map Resource Int -> Map Resource Int
+updateInventory r n i =
+  case Map.lookup r i of
+    Just v -> Map.insert r (v + n) i
+    Nothing -> Map.insert r n i
 
 runCommand :: Command -> World -> (World, String)
 runCommand List w@(World ps _) =
@@ -55,8 +62,34 @@ runCommand (Goto n) w@(World ps s) =
     Nothing -> (w,"Where's that!?!??!")
 runCommand Wallet w@(World _ s) =
   (w, "You have " ++ show (balance s) ++ " currency units")
-runCommand (Buy r n) w = (w,"Sorry, the market closed early.")
-runCommand (Sell r n) w = (w,"Sorry, the market closed early.")
+runCommand (Buy n r) w@(World ps s) =
+  let place = location s
+      unitPrice = Map.lookup r (sellPrice place)
+      price = fmap (*n) unitPrice
+      bal = balance s
+  in case price of
+     Just p ->
+       if p > bal
+          then (w, "Too pricy for you!")
+          else (World ps (s { balance = balance s - p
+                    , inventory = updateInventory r n (inventory s)
+                    }),
+        "SOLD!")
+     Nothing -> (w, show r ++ " is not for sale here")
+runCommand (Sell n r) w@(World ps s) =
+  let place = location s
+      unitPrice = Map.lookup r (buyPrice place)
+      price = fmap (*n) unitPrice
+      onboard = fromMaybe 0 $ Map.lookup r (inventory s)
+  in case price of
+     Just p ->
+       if n > onboard
+          then (w, "You don't have that much " ++ show r)
+          else (World ps (s { balance = balance s + p
+                    , inventory = updateInventory r (- n) (inventory s)
+                    }),
+        "BOUGHT!")
+     Nothing -> (w, show r ++ " is not wanted here")
 runCommand Market w@(World _ s) =
   (w
   ,"Buy: " ++
@@ -101,4 +134,6 @@ run w = do
   run w'
 
 main :: IO World
-main = run start
+main = do
+  putStrLn "Welcome to space"
+  run start
