@@ -1,0 +1,12 @@
+* Haskell Space Trading
+
+Coded for West London Hack Night April 2015.
+
+** Running
+
+#+BEGIN_SRC sh
+cabal run 
+List
+Goto "Vim"
+Buy 2 Coal
+#+END_SRC
