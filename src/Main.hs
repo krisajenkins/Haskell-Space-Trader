@@ -78,18 +78,27 @@ runCommand (Buy n r) w@(World ps s) =
      Nothing -> (w, show r ++ " is not for sale here")
 runCommand (Sell n r) w@(World ps s) =
   let place = location s
-      unitPrice = Map.lookup r (buyPrice place)
-      price = fmap (*n) unitPrice
-      onboard = fromMaybe 0 $ Map.lookup r (inventory s)
+      unitPrice =
+        Map.lookup r
+                   (buyPrice place)
+      price = fmap (* n) unitPrice
+      onboard =
+        fromMaybe 0 $
+        Map.lookup r
+                   (inventory s)
   in case price of
-     Just p ->
-       if n > onboard
-          then (w, "You don't have that much " ++ show r)
-          else (World ps (s { balance = balance s + p
-                    , inventory = updateInventory r (- n) (inventory s)
-                    }),
-        "BOUGHT!")
-     Nothing -> (w, show r ++ " is not wanted here")
+       Just p ->
+         if n > onboard
+            then (w,"You don't have that much " ++ show r)
+            else (World ps
+                        (s {balance = balance s + p
+                           ,inventory =
+                              updateInventory r
+                                              (-n)
+                                              (inventory s)})
+                 ,"BOUGHT!")
+       Nothing ->
+         (w,show r ++ " is not wanted here")
 runCommand Market w@(World _ s) =
   (w
   ,"Buy: " ++
