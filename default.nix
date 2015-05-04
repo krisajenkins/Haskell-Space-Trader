@@ -1,4 +1,4 @@
-{ cabal, cabalInstall }:
+{ cabal, cabalInstall, lens, mtl, transformers, tasty, tastyQuickcheck }:
 
 cabal.mkDerivation (self: {
   pname = "htext";
@@ -7,7 +7,8 @@ cabal.mkDerivation (self: {
   isLibrary = false;
   isExecutable = true;
   buildTools = [ cabalInstall ];
-  buildDepends = [];
+  buildDepends = [ lens mtl transformers ];
+  testDepends = [ tasty tastyQuickcheck ];
   meta = {
     platforms = self.ghc.meta.platforms;
   };
