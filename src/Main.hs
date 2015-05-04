@@ -1,10 +1,12 @@
-module Main where
+{-# LANGUAGE TemplateHaskell #-}
+module Main (main) where
 
+import           Control.Lens
 import           Control.Monad.State
 import           Data.Map            (Map)
 import qualified Data.Map            as Map
 import           Data.Maybe          (fromMaybe)
-import           Text.Read
+import           Text.Read           hiding (get)
 
 data Resource
   = Coal
@@ -15,8 +17,8 @@ data Resource
 data Place =
   Place {_name        :: String
         ,_description :: String
-        ,_buyPrice    :: Map Resource Int
-        ,_sellPrice   :: Map Resource Int}
+        ,_buyPrices   :: Map Resource Int
+        ,_sellPrices  :: Map Resource Int}
   deriving (Show,Read,Eq)
 
 data Ship =
@@ -28,130 +30,103 @@ data Ship =
 data World = World {_places :: [Place], _ship :: Ship}
   deriving (Show,Read,Eq)
 
+makeLenses ''Place
+makeLenses ''Ship
+makeLenses ''World
+
+here :: Lens' World Place
+here = ship . location
+
 findPlace :: String -> [Place] -> Maybe Place
 findPlace n ps =
-  case filter (\p -> _name p == n) ps of
+  case filter (\p -> (view name) p == n) ps of
        [p] -> Just p
        _ -> Nothing
 
 data Command
   = List
   | Goto String
-  | Buy Int
-        Resource
-  | Sell Int
-         Resource
+  | Buy Int Resource
+  | Sell Int Resource
   | Market
   | Wallet
   deriving (Read)
 
-updateInventory :: Resource -> Int -> Map Resource Int -> Map Resource Int
-updateInventory r n i =
-  case Map.lookup r i of
-    Just v -> Map.insert r (v + n) i
-    Nothing -> Map.insert r n i
+trade :: Resource -> Int -> Int -> Ship -> Ship
+trade resource price quantity =
+  over balance (subtract price) .
+  over inventory (Map.insertWith (+) resource quantity)
 
 runCommand :: Command -> State World String
 runCommand List =
-  do ps <- gets _places
-     return $
-       "Your places are...\n" ++
-       concatMap (\p -> _name p ++ "\n") ps
+  do ps <- use places
+     return $ unlines ("Your places are..." : map (view name) ps)
 
 runCommand (Goto n) =
-  do ps <- gets _places
-     s <- gets _ship
+  do ps <- use places
      case findPlace n ps of
-                Just p -> put (World ps (s {_location = p}))
-                          >> return ("You have moved to " ++ _name p ++ "\n" ++ _description p)
-                Nothing -> return "Where's that!?!??!"
+       Just p ->
+         ((ship . location) .= p) >>
+         return ("You have moved to " ++ view name p ++ "\n" ++ view description p)
+       Nothing -> return "Where's that!?!??!"
+
 
 runCommand Wallet = do
-   s <- gets _ship
-   return $ "You have " ++ show (_balance s) ++ " currency units"
+   bal <- use (ship . balance)
+   return $ "You have " ++ show bal ++ " currency units"
 
-runCommand (Buy n r) =
-  do ps <- gets _places
-     s <- gets _ship
-     let place = _location s
-         unitPrice =
-           Map.lookup r
-                      (_sellPrice place)
-         price = fmap (* n) unitPrice
-         bal = _balance s
-     case price of
-       Nothing -> return $ show r ++ " is not for sale here"
-       Just p ->
-         if p > bal
-            then return "Too pricy for you!"
-            else put (World ps
-                            (s {_balance = _balance s - p
-                               ,_inventory =
-                                  updateInventory r
-                                                  n
-                                                  (_inventory s)})) >>
+runCommand (Buy quantity resource) =
+  do unitPrice <- use (here . sellPrices . at resource)
+     bal <- use (ship . balance)
+     case fmap (* quantity) unitPrice of
+       Nothing -> return $ show resource ++ " is not for sale here"
+       Just price ->
+         if price > bal
+            then return $ "Too pricy for you!" ++ show price
+            else ship %= trade resource price quantity >>
                  return "SOLD!"
 
-runCommand (Sell n r) =
-  do ps <- gets _places
-     s <- gets _ship
-     let place = _location s
-         unitPrice =
-           Map.lookup r
-                      (_buyPrice place)
-         price = fmap (* n) unitPrice
-         onboard =
-           fromMaybe 0 $
-           Map.lookup r
-                      (_inventory s)
-     case price of
-       Nothing -> return $ show r ++ " is not wanted here"
-       Just p ->
-         if n > onboard
-            then return $ "You don't have that much " ++ show r
-            else put (World ps
-                            (s {_balance = _balance s + p
-                               ,_inventory =
-                                  updateInventory r
-                                                  (-n)
-                                                  (_inventory s)})) >>
+runCommand (Sell quantity resource) =
+  do unitPrice <- use (here . buyPrices . at resource)
+     onboard <- use (ship . inventory . at resource)
+     case fmap (* quantity) unitPrice of
+       Nothing -> return $ show resource ++ " is not wanted here"
+       Just price ->
+         if quantity >
+            fromMaybe 0 onboard
+            then return $ "You don't have that much " ++ show resource
+            else ship %= trade resource (-price) (-quantity) >>
                  return "BOUGHT!"
 
 runCommand Market =
-  do s <- gets _ship
-     return ("Buy: " ++
-             show (_buyPrice (_location s)) ++
-             "\n" ++
-             "Sell: " ++
-             show (_sellPrice (_location s)))
-
-parseCommand :: String -> Maybe Command
-parseCommand = readMaybe
+  do buys  <- use (here . buyPrices)
+     sells <- use (here . sellPrices)
+     return $
+       unlines ["Buy: " ++ show buys,"Sell: " ++ show sells]
 
 tryRunCommand :: String -> State World String
 tryRunCommand s =
-  case parseCommand s of
+  case readMaybe s of
     Just c -> runCommand c
     Nothing -> return "I'm sorry Dave, I can't do that."
 
-initialMap :: [Place]
-initialMap =
-  [Place {_name = "Eclipse"
-         ,_description = "A place where the pace of life is slow."
-         ,_buyPrice =
-            Map.fromList [(Cotton,10),(Coal,5)]
-         ,_sellPrice =
-            Map.fromList [(Amber,43),(Coal,6)]}
-  ,Place {_name = "Vim"
-         ,_description = "A highly advanced society"
-         ,_buyPrice =
-            Map.fromList [(Cotton,12),(Amber,50)]
-         ,_sellPrice =
-            Map.fromList [(Amber,43),(Coal,6)]}]
-
-start :: World
-start =
+initialWorld :: World
+initialWorld =
   World initialMap (Ship Map.empty 20 (head initialMap))
+  where initialMap :: [Place]
+        initialMap =
+          [Place {_name = "Eclipse"
+                 ,_description = "A place where the pace of life is slow."
+                 ,_buyPrices =
+                    Map.fromList [(Cotton,10),(Coal,5)]
+                 ,_sellPrices =
+                    Map.fromList [(Amber,43),(Coal,6)]}
+          ,Place {_name = "Vim"
+                 ,_description = "A highly advanced society"
+                 ,_buyPrices =
+                    Map.fromList [(Cotton,12),(Amber,50)]
+                 ,_sellPrices =
+                    Map.fromList [(Amber,43),(Coal,6)]}]
 
 run :: World -> IO World
 run w = do
@@ -161,6 +136,6 @@ run w = do
   run w'
 
 main :: IO World
-main = do
-  putStrLn "Welcome to space"
-  run start
+main =
+  putStrLn "Welcome to space" >>
+  run initialWorld
