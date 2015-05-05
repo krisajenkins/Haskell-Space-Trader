@@ -60,20 +60,31 @@ trade resource price quantity =
 runCommand :: Command -> State World String
 runCommand List =
   do ps <- use places
-     return $ unlines ("Your places are..." : map (view name) ps)
+     return $
+       unlines ("Your places are..." :
+                fmap (view name) ps)
 
 runCommand (Goto n) =
   do ps <- use places
      case findPlace n ps of
        Just p ->
-         ((ship . location) .= p) >>
-         return ("You have moved to " ++ view name p ++ "\n" ++ view description p)
+         (ship . location) .=
+         p >>
+         return ("You have moved to " ++
+                 view name p ++
+                 "\n" ++
+                 view description p)
        Nothing -> return "Where's that!?!??!"
 
+runCommand Wallet =
+  do bal <- use (ship . balance)
+     return $ "You have " ++ show bal ++ " currency units"
 
-runCommand Wallet = do
-   bal <- use (ship . balance)
-   return $ "You have " ++ show bal ++ " currency units"
+runCommand Market =
+  do buys <- use (here . buyPrices)
+     sells <- use (here . sellPrices)
+     return $
+       unlines ["Buy: " ++ show buys,"Sell: " ++ show sells]
 
 runCommand (Buy quantity resource) =
   do unitPrice <- use (here . sellPrices . at resource)
@@ -98,17 +109,12 @@ runCommand (Sell quantity resource) =
             else ship %= trade resource (-price) (-quantity) >>
                  return "BOUGHT!"
 
-runCommand Market =
-  do buys  <- use (here . buyPrices)
-     sells <- use (here . sellPrices)
-     return $
-       unlines ["Buy: " ++ show buys,"Sell: " ++ show sells]
-
 tryRunCommand :: String -> State World String
 tryRunCommand s =
   case readMaybe s of
     Just c -> runCommand c
-    Nothing -> return "I'm sorry Dave, I can't do that."
+    Nothing ->
+      return "I'm sorry Dave, I can't do that."
 
 initialWorld :: World
 initialWorld =
@@ -129,8 +135,9 @@ initialWorld =
                     Map.fromList [(Amber,43),(Coal,6)]}]
 
 run :: World -> IO World
-run w = do
-  input <- getLine
-  let (msg, w') = runState (tryRunCommand input) w
-  putStrLn msg
-  run w'
+run w =
+  do input <- getLine
+     let (msg,w') =
+           runState (tryRunCommand input) w
+     putStrLn msg
+     run w'
