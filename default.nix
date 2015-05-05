@@ -1,7 +1,7 @@
 { cabal, cabalInstall, lens, mtl, transformers, tasty, tastyQuickcheck }:
 
 cabal.mkDerivation (self: {
-  pname = "htext";
+  pname = "haskell-space-trader";
   version = "0.1.0.0";
   src = ./.;
   isLibrary = false;
